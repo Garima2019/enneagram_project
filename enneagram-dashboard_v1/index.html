@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enneagram Dynamics Dashboard</title>
+  <meta name="description" content="An interactive, multi-stage Enneagram personality questionnaire dashboard with dynamic deep-dive analysis, beautiful data visualization, and PDF reporting.">
+  
+  <!-- Unique IDs for browser testing and SEO -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧬</text></svg>">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Chart.js for data visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- jsPDF for report generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Ambient background glow elements -->
+  <div class="glow-bg">
+    <div class="glow-blob blob-1" id="blob-1"></div>
+    <div class="glow-blob blob-2" id="blob-2"></div>
+    <div class="glow-blob blob-3" id="blob-3"></div>
+  </div>
+
+  <div class="app-wrapper">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo">
+        <span class="logo-icon"><i class="fa-solid fa-compass"></i></span>
+        <span class="logo-text">Enneagram<span>Dynamics</span></span>
+      </div>
+      <div class="header-actions">
+        <button id="theme-toggle-btn" class="icon-btn" aria-label="Toggle visual theme">
+          <i class="fa-solid fa-moon"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="main-content">
+      
+      <!-- SCREEN 0: WELCOME & INITIALIZATION -->
+      <section id="screen-welcome" class="app-card screen active">
+        <div class="welcome-hero">
+          <h1 class="welcome-title">Discover Your Core Drive</h1>
+          <p class="welcome-subtitle">A dynamic, multi-stage Enneagram system designed to pinpoint your true archetype with progressive calibration.</p>
+        </div>
+
+        <div class="methodology-grid">
+          <div class="methodology-card">
+            <div class="methodology-icon"><i class="fa-solid fa-layer-group"></i></div>
+            <h3>1. Baseline Calibration</h3>
+            <p>Answer 18 questions (2 per type) to establish your preliminary psychological landscape.</p>
+          </div>
+          <div class="methodology-card">
+            <div class="methodology-icon"><i class="fa-solid fa-filter"></i></div>
+            <h3>2. Dynamic Injection</h3>
+            <p>The system isolates your top-scoring archetypes and dynamically injects 5 deep-dive questions to test and resolve ties.</p>
+          </div>
+          <div class="methodology-card">
+            <div class="methodology-icon"><i class="fa-solid fa-chart-pie"></i></div>
+            <h3>3. Deep Profile</h3>
+            <p>Examine wings, integration/stress pathways, visualize your profile, and export a certified PDF dossier.</p>
+          </div>
+        </div>
+
+        <div class="welcome-actions">
+          <button id="start-btn" class="primary-btn pulse-glow">
+            <span>Begin Assessment</span>
+            <i class="fa-solid fa-arrow-right"></i>
+          </button>
+        </div>
+
+        <div class="archetypes-preview">
+          <h4>The Nine Human Motivations</h4>
+          <div class="archetype-tags">
+            <span class="tag t1"><span class="badge">1</span> Reformer</span>
+            <span class="tag t2"><span class="badge">2</span> Helper</span>
+            <span class="tag t3"><span class="badge">3</span> Achiever</span>
+            <span class="tag t4"><span class="badge">4</span> Individualist</span>
+            <span class="tag t5"><span class="badge">5</span> Investigator</span>
+            <span class="tag t6"><span class="badge">6</span> Loyalist</span>
+            <span class="tag t7"><span class="badge">7</span> Enthusiast</span>
+            <span class="tag t8"><span class="badge">8</span> Challenger</span>
+            <span class="tag t9"><span class="badge">9</span> Peacemaker</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 1: THE QUIZ INTERFACE -->
+      <section id="screen-quiz" class="app-card screen">
+        <div class="quiz-header">
+          <div class="quiz-meta">
+            <span class="quiz-phase-badge" id="quiz-phase-label">Phase 1: Baseline</span>
+            <span class="quiz-progress-text" id="quiz-progress-text">Question 1 of 18</span>
+          </div>
+          <div class="progress-container">
+            <div class="progress-bar" id="quiz-progress-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Question Slider (Container for single question display) -->
+        <div class="question-outer-wrapper">
+          <div class="question-card" id="question-card">
+            <div class="question-category" id="question-category">ASSESSMENT QUESTION</div>
+            <p class="question-text" id="question-text">Loading question...</p>
+          </div>
+        </div>
+
+        <!-- Rating Controls (Scale 1-5) -->
+        <div class="rating-section">
+          <div class="scale-labels">
+            <span>Strongly Disagree</span>
+            <span>Strongly Agree</span>
+          </div>
+          <div class="rating-buttons" id="rating-buttons-container">
+            <button class="rating-btn" data-value="1">
+              <span class="num">1</span>
+              <span class="lbl">Strongly Disagree</span>
+            </button>
+            <button class="rating-btn" data-value="2">
+              <span class="num">2</span>
+              <span class="lbl">Disagree</span>
+            </button>
+            <button class="rating-btn" data-value="3">
+              <span class="num">3</span>
+              <span class="lbl">Neutral</span>
+            </button>
+            <button class="rating-btn" data-value="4">
+              <span class="num">4</span>
+              <span class="lbl">Agree</span>
+            </button>
+            <button class="rating-btn" data-value="5">
+              <span class="num">5</span>
+              <span class="lbl">Strongly Agree</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Navigation buttons -->
+        <div class="quiz-navigation">
+          <button id="prev-btn" class="secondary-btn" disabled>
+            <i class="fa-solid fa-chevron-left"></i> <span>Back</span>
+          </button>
+          <div class="quiz-nav-dots" id="quiz-nav-dots"></div>
+          <button id="next-btn" class="secondary-btn" disabled>
+            <span>Skip</span> <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: PHASE TRANSITION & CALIBRATION ALERT -->
+      <section id="screen-transition" class="app-card screen">
+        <div class="transition-spinner">
+          <div class="double-bounce1"></div>
+          <div class="double-bounce2"></div>
+          <div class="radar-pulse"></div>
+        </div>
+        
+        <div class="transition-details">
+          <h2 class="transition-title">Baseline Complete</h2>
+          <p class="transition-subtitle">Analyzing raw values and resolving emotional orientation profiles...</p>
+          
+          <div class="preliminary-alert-box" id="preliminary-alert-box">
+            <!-- Populated dynamically via JS -->
+          </div>
+
+          <div class="dynamic-injection-explainer">
+            <div class="explainer-icon"><i class="fa-solid fa-bolt"></i></div>
+            <div class="explainer-content">
+              <h4>Adaptive Phase Injection Activated</h4>
+              <p id="injection-description">To isolate your dominant Enneagram dynamics and cross-examine any secondary wings, we are injecting 5 additional questions exclusive to your primary scoring type from the source dataset.</p>
+            </div>
+          </div>
+
+          <button id="start-phase2-btn" class="primary-btn pulse-glow">
+            <span>Begin Phase 2: Deep Dive</span>
+            <i class="fa-solid fa-angles-right"></i>
+          </button>
+        </div>
+      </section>
+
+      <!-- SCREEN 3: RESULTS DASHBOARD -->
+      <section id="screen-results" class="screen">
+        
+        <!-- Primary Type Hero Card -->
+        <div class="app-card result-hero-card">
+          <div class="badge-ribbon" id="result-type-badge">TYPE 5</div>
+          <div class="result-hero-header">
+            <div class="hero-archetype-info">
+              <p class="hero-label">YOUR DOMINANT ARCHETYPE</p>
+              <h1 class="hero-type-name" id="result-type-name">THE INVESTIGATOR</h1>
+              <p class="hero-orientation" id="result-type-orientation">Core Orientation: Knowledge, privacy, observation, independence</p>
+            </div>
+            <div class="hero-icon-container" id="hero-icon-container">
+              <i class="fa-solid fa-brain"></i>
+            </div>
+          </div>
+          
+          <hr class="hero-divider">
+
+          <div class="hero-description-block">
+            <p class="hero-description" id="result-type-description">
+              Investigators are alert, insightful, and curious. They are able to concentrate and focus on developing complex ideas and skills. Independent, innovative, and inventive, they can also become preoccupied with their thoughts and imaginary constructs. They become detached, yet high-strung and intense. Their basic fear is of being overwhelmed, helpless, or incapable.
+            </p>
+          </div>
+
+          <div class="dynamics-chips-row">
+            <div class="dynamic-chip chip-wing">
+              <span class="chip-title">Potential Wings:</span>
+              <span class="chip-val" id="result-wings">5w4, 5w6</span>
+            </div>
+            <div class="dynamic-chip chip-growth">
+              <span class="chip-title">Growth (Integration):</span>
+              <span class="chip-val" id="result-growth"><i class="fa-solid fa-arrow-up"></i> Type 8</span>
+            </div>
+            <div class="dynamic-chip chip-stress">
+              <span class="chip-title">Stress (Disintegration):</span>
+              <span class="chip-val" id="result-stress"><i class="fa-solid fa-arrow-down-long"></i> Type 7</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard Sub-grid -->
+        <div class="results-dashboard-grid">
+          
+          <!-- Visualization Card -->
+          <div class="app-card viz-card">
+            <div class="card-header-row">
+              <h3>Archetype Distribution</h3>
+              <div class="chart-toggle-group">
+                <button class="toggle-btn active" id="btn-chart-radar"><i class="fa-solid fa-circle-notch"></i> Radar</button>
+                <button class="toggle-btn" id="btn-chart-bar"><i class="fa-solid fa-chart-simple"></i> Bar</button>
+              </div>
+            </div>
+            <div class="chart-wrapper">
+              <canvas id="enneagram-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Quick Action panel -->
+          <div class="app-card actions-card">
+            <h3>Assessment Dossier</h3>
+            <p>Download the fully certified breakdown of your psychological matrix, including baseline answers, injected calibration scores, and growth directions.</p>
+            
+            <div class="dossier-actions-column">
+              <button id="download-pdf-btn" class="primary-btn full-width text-left">
+                <i class="fa-solid fa-file-pdf"></i>
+                <div class="btn-double-text">
+                  <span class="main-txt">Download PDF Report</span>
+                  <span class="sub-txt">High-fidelity layout, printable</span>
+                </div>
+              </button>
+
+              <button id="download-txt-btn" class="secondary-btn full-width text-left">
+                <i class="fa-solid fa-file-lines"></i>
+                <div class="btn-double-text">
+                  <span class="main-txt">Download Plain Text</span>
+                  <span class="sub-txt">Raw data report (.txt)</span>
+                </div>
+              </button>
+
+              <button id="restart-btn" class="outline-btn full-width">
+                <i class="fa-solid fa-arrows-rotate"></i> Retake Assessment
+              </button>
+            </div>
+
+            <!-- Developer Notice: Dynamic pull check -->
+            <div class="data-source-meta">
+              <i class="fa-solid fa-database"></i>
+              <span>Dataset: Enneagram_Questionnaire_By_Type.md</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Detailed Scores Table Accordion Card -->
+        <div class="app-card breakdown-card">
+          <div class="card-header-row cursor-pointer" id="breakdown-toggle-header">
+            <h3>Response Log &amp; Score Calculation</h3>
+            <span class="accordion-arrow"><i class="fa-solid fa-chevron-down"></i></span>
+          </div>
+          
+          <div class="breakdown-content collapsed" id="breakdown-content">
+            <div class="score-summary-grid" id="score-summary-grid">
+              <!-- Dynamically populated via JS -->
+            </div>
+
+            <h4 class="section-title">All Answered Statements (Categorized by Type)</h4>
+            <div class="responses-list" id="responses-list">
+              <!-- Dynamically populated via JS -->
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>&copy; 2026 Enneagram Dynamics Inc. Powered by Adaptive Psychological Calibration.</p>
+    </footer>
+  </div>
+
+  <!-- Custom JS Application Script -->
+  <script src="app.js"></script>
+</body>
+</html>
