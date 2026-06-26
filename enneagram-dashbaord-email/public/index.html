@@ -52,7 +52,7 @@
     </header>
 
     <!-- Progress Indicator & Wizard Navigation -->
-    <nav class="wizard-steps" id="wizard-steps-nav">
+    <nav class="wizard-steps" id="wizard-steps-nav" style="display: none;">
       <div class="step-indicator active" id="step-1-indicator">
         <div class="step-num">1</div>
         <div class="step-label">Baseline</div>
@@ -81,18 +81,67 @@
         </div>
       </section>
 
+      <!-- GDPR DATA STORAGE AND PRIVACY CONSENT -->
+      <section id="consent-stage" class="view-panel">
+        <div class="consent-card">
+          <div class="consent-icon">
+            <i data-lucide="shield-check" class="shield-icon"></i>
+          </div>
+          <h2>Data Storage & Privacy Consent</h2>
+          <p class="subtitle">Please review and accept our data policy as per General Data Protection Regulation (GDPR) before starting the assessment.</p>
+          
+          <div class="consent-details">
+            <div class="consent-item">
+              <i data-lucide="database"></i>
+              <div>
+                <h4>Local Progress Storage</h4>
+                <p>Your assessment progress and rating inputs are stored locally on your browser. This data remains on your machine and you can resume the test at any point.</p>
+              </div>
+            </div>
+            <div class="consent-item">
+              <i data-lucide="mail"></i>
+              <div>
+                <h4>Secure Emailing</h4>
+                <p>If you request an emailed report, your email and assessment scores are transmitted securely. Your email is only used for report delivery.</p>
+              </div>
+            </div>
+            <div class="consent-item">
+              <i data-lucide="file-text"></i>
+              <div>
+                <h4>Server-Side Backups</h4>
+                <p>Generated report HTML files are temporarily saved on the server in a secure 'reports' folder for archival and debugging purposes. No marketing profiles are built.</p>
+              </div>
+            </div>
+          </div>
+
+          <form id="consent-form">
+            <div class="consent-checkbox-wrapper">
+              <input type="checkbox" id="consent-checkbox" required>
+              <label for="consent-checkbox">
+                I explicitly agree to the storage of my responses, test progress, and email address for generating and delivering my custom Enneagram personality profile report.
+              </label>
+            </div>
+            
+            <button type="submit" class="btn btn-primary" id="consent-proceed-btn" disabled>
+              <span>Accept & Begin Assessment</span>
+              <i data-lucide="arrow-right"></i>
+            </button>
+          </form>
+        </div>
+      </section>
+
       <!-- STAGE 1: BASELINE QUESTIONS -->
       <section id="baseline-stage" class="view-panel">
         <div class="panel-header">
           <div class="header-content">
             <span class="badge">Stage 1 of 3</span>
             <h2>Baseline Enneagram Questionnaire</h2>
-            <p>To begin, respond to these initial 18 questions (2 random questions per Enneagram type). Be as honest as possible with yourself.</p>
+            <p>To begin, respond to these initial 20 questions (2 random questions per Enneagram type from the file). Be as honest as possible with yourself.</p>
           </div>
           <div class="progress-bar-container">
             <div class="progress-info">
               <span>Overall Progress</span>
-              <span id="baseline-progress-text">0% (0 of 18)</span>
+              <span id="baseline-progress-text">0% (0 of 20)</span>
             </div>
             <div class="progress-track">
               <div id="baseline-progress-fill" class="progress-fill" style="width: 0%;"></div>
@@ -105,10 +154,14 @@
             <!-- Questions injected here by JS -->
           </div>
           
-          <div class="action-bar">
+          <div class="action-bar" style="justify-content: space-between;">
+            <button type="button" class="btn btn-outline" id="baseline-back-btn" disabled>
+              <i data-lucide="arrow-left"></i>
+              <span>Back</span>
+            </button>
             <p class="error-msg" id="baseline-error"></p>
-            <button type="submit" class="btn btn-primary" id="baseline-submit-btn">
-              <span>Calculate Preliminary Scores</span>
+            <button type="button" class="btn btn-primary" id="baseline-next-btn">
+              <span>Next</span>
               <i data-lucide="arrow-right"></i>
             </button>
           </div>
@@ -158,11 +211,15 @@
             <!-- Questions injected here by JS -->
           </div>
           
-          <div class="action-bar">
+          <div class="action-bar" style="justify-content: space-between;">
+            <button type="button" class="btn btn-outline" id="deep-dive-back-btn" disabled>
+              <i data-lucide="arrow-left"></i>
+              <span>Back</span>
+            </button>
             <p class="error-msg" id="deep-dive-error"></p>
-            <button type="submit" class="btn btn-primary" id="deep-dive-submit-btn">
-              <span>Calculate Final Results</span>
-              <i data-lucide="check-check"></i>
+            <button type="button" class="btn btn-primary" id="deep-dive-next-btn">
+              <span>Next</span>
+              <i data-lucide="arrow-right"></i>
             </button>
           </div>
         </form>

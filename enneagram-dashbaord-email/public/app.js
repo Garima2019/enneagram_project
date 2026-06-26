@@ -1,13 +1,16 @@
 // Enneagram Dashboard Application State
 const state = {
   allQuestionsByType: null, // Full questions library grouped by type
-  baselineQuestions: [],    // The 18 questions selected for Stage 1
-  deepDiveQuestions: [],    // The 5 (or more) questions injected for Stage 3
+  baselineQuestions: [],    // The 20 questions selected for Stage 1
+  deepDiveQuestions: [],    // The 5 questions injected for Stage 3
   topTypes: [],             // Highest scoring types from Stage 2
   answers: {},              // Store answers: { questionNumber: rating }
   chartInstance: null,      // Chart.js chart reference
   activeChartType: 'radar', // 'radar' or 'bar'
   currentStep: 1,           // Active wizard step: 1 (Baseline), 2 (Deep Dive), 3 (Results)
+  consentAgreed: false,     // GDPR consent
+  currentBaselineIndex: 0,  // Active baseline question index (0-19)
+  currentDeepDiveIndex: 0,  // Active deep dive question index (0-4)
   lastGeneratedReportHtml: null // Cached report html for local download
 };
 
@@ -139,6 +142,9 @@ function initializeTheme() {
 // Save Assessment Progress to LocalStorage
 function saveProgress() {
   const progress = {
+    consentAgreed: state.consentAgreed,
+    currentBaselineIndex: state.currentBaselineIndex,
+    currentDeepDiveIndex: state.currentDeepDiveIndex,
     answers: state.answers,
     baselineQuestions: state.baselineQuestions,
     deepDiveQuestions: state.deepDiveQuestions,
@@ -160,6 +166,10 @@ function restoreProgress() {
 
   try {
     const progress = JSON.parse(saved);
+    
+    state.consentAgreed = progress.consentAgreed || false;
+    if (!state.consentAgreed) return false;
+
     if (!progress.baselineQuestions || progress.baselineQuestions.length === 0) return false;
 
     // Restore state properties
@@ -168,7 +178,11 @@ function restoreProgress() {
     state.deepDiveQuestions = progress.deepDiveQuestions || [];
     state.topTypes = progress.topTypes || [];
     state.currentStep = progress.currentStep || 1;
+    state.currentBaselineIndex = progress.currentBaselineIndex || 0;
+    state.currentDeepDiveIndex = progress.currentDeepDiveIndex || 0;
 
+    // Show wizard since consent is already agreed
+    document.getElementById('wizard-steps-nav').style.display = 'flex';
     updateWizardNavigation();
 
     if (state.currentStep === 1) {
@@ -177,7 +191,6 @@ function restoreProgress() {
       showPanel('baseline-stage');
       showToast('Resumed your previous assessment progress!', 'success');
     } else if (state.currentStep === 2) {
-      // If they were on the transition/intermission step (which is part of step 2 entry)
       if (state.deepDiveQuestions.length === 0) {
         // Go back to baseline results analysis
         state.currentStep = 1;
@@ -226,10 +239,37 @@ async function loadQuestionnaire() {
     }
   }
   
-  // Attempt to restore progress first, if none exists start fresh
+  // Attempt to restore progress first, if none exists show consent screen
   if (!restoreProgress()) {
-    startAssessment();
+    showConsentScreen();
   }
+}
+
+// Show GDPR Privacy Consent Screen
+function showConsentScreen() {
+  document.getElementById('wizard-steps-nav').style.display = 'none';
+  showPanel('consent-stage');
+
+  const checkbox = document.getElementById('consent-checkbox');
+  const proceedBtn = document.getElementById('consent-proceed-btn');
+  const form = document.getElementById('consent-form');
+
+  checkbox.checked = false;
+  proceedBtn.disabled = true;
+
+  checkbox.addEventListener('change', (e) => {
+    proceedBtn.disabled = !e.target.checked;
+  });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (checkbox.checked) {
+      state.consentAgreed = true;
+      saveProgress();
+      document.getElementById('wizard-steps-nav').style.display = 'flex';
+      startAssessment();
+    }
+  });
 }
 
 // Start/Restart fresh Assessment
@@ -240,11 +280,14 @@ function startAssessment() {
   state.deepDiveQuestions = [];
   state.topTypes = [];
   state.currentStep = 1;
+  state.consentAgreed = true;
+  state.currentBaselineIndex = 0;
+  state.currentDeepDiveIndex = 0;
   state.lastGeneratedReportHtml = null;
   
   updateWizardNavigation();
 
-  // Select 2 random questions for each of the 9 types
+  // Select 2 random questions for each of the 9 types (18 questions total)
   for (let typeNum = 1; typeNum <= 9; typeNum++) {
     const typeObj = state.allQuestionsByType[typeNum];
     if (!typeObj || !typeObj.questions || typeObj.questions.length < 2) {
@@ -271,7 +314,32 @@ function startAssessment() {
     });
   }
 
-  // Shuffle baseline questions to mix up types, but display them numbered 1-18
+  // Select 2 additional random questions from any remaining questions of any types to make exactly 20
+  const remainingQuestionsPool = [];
+  const selectedOriginalNumbers = new Set(state.baselineQuestions.map(q => q.originalNumber));
+  
+  for (let typeNum = 1; typeNum <= 9; typeNum++) {
+    const typeObj = state.allQuestionsByType[typeNum];
+    if (typeObj && typeObj.questions) {
+      typeObj.questions.forEach(q => {
+        if (!selectedOriginalNumbers.has(q.originalNumber)) {
+          remainingQuestionsPool.push({
+            ...q,
+            typeNumber: typeNum
+          });
+        }
+      });
+    }
+  }
+
+  // Pick 2 random questions from the pool
+  for (let i = 0; i < 2 && remainingQuestionsPool.length > 0; i++) {
+    const randIdx = Math.floor(Math.random() * remainingQuestionsPool.length);
+    const selectedQ = remainingQuestionsPool.splice(randIdx, 1)[0];
+    state.baselineQuestions.push(selectedQ);
+  }
+
+  // Shuffle baseline questions to mix up types
   shuffleArray(state.baselineQuestions);
 
   // Render Baseline form
@@ -286,13 +354,48 @@ function setupEventListeners() {
   const baselineForm = document.getElementById('baseline-form');
   baselineForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    handleBaselineSubmit();
+    if (state.currentBaselineIndex === 19) {
+      const hasUnanswered = state.baselineQuestions.some(q => state.answers[q.originalNumber] === undefined);
+      if (hasUnanswered) {
+        validateBaselineAnswers();
+      } else {
+        handleBaselineSubmit();
+      }
+    }
+  });
+
+  // Baseline Back Navigation
+  const baselineBackBtn = document.getElementById('baseline-back-btn');
+  baselineBackBtn.addEventListener('click', () => {
+    if (state.currentBaselineIndex > 0) {
+      state.currentBaselineIndex--;
+      saveProgress();
+      renderBaselineQuestions();
+    }
+  });
+
+  // Baseline Next/Calculate Navigation
+  const baselineNextBtn = document.getElementById('baseline-next-btn');
+  baselineNextBtn.addEventListener('click', () => {
+    if (state.currentBaselineIndex < 19) {
+      state.currentBaselineIndex++;
+      saveProgress();
+      renderBaselineQuestions();
+    } else {
+      const hasUnanswered = state.baselineQuestions.some(q => state.answers[q.originalNumber] === undefined);
+      if (hasUnanswered) {
+        validateBaselineAnswers();
+      } else {
+        handleBaselineSubmit();
+      }
+    }
   });
 
   // Proceed from transition to Deep Dive
   const startDeepDiveBtn = document.getElementById('start-deep-dive-btn');
   startDeepDiveBtn.addEventListener('click', () => {
     state.currentStep = 2;
+    state.currentDeepDiveIndex = 0;
     updateWizardNavigation();
     renderDeepDiveQuestions();
     updateProgress('deep-dive');
@@ -303,7 +406,42 @@ function setupEventListeners() {
   const deepDiveForm = document.getElementById('deep-dive-form');
   deepDiveForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    handleDeepDiveSubmit();
+    if (state.currentDeepDiveIndex === state.deepDiveQuestions.length - 1) {
+      const hasUnanswered = state.deepDiveQuestions.some(q => state.answers[q.originalNumber] === undefined);
+      if (hasUnanswered) {
+        validateDeepDiveAnswers();
+      } else {
+        handleDeepDiveSubmit();
+      }
+    }
+  });
+
+  // Deep Dive Back Navigation
+  const deepDiveBackBtn = document.getElementById('deep-dive-back-btn');
+  deepDiveBackBtn.addEventListener('click', () => {
+    if (state.currentDeepDiveIndex > 0) {
+      state.currentDeepDiveIndex--;
+      saveProgress();
+      renderDeepDiveQuestions();
+    }
+  });
+
+  // Deep Dive Next/Submit Navigation
+  const deepDiveNextBtn = document.getElementById('deep-dive-next-btn');
+  deepDiveNextBtn.addEventListener('click', () => {
+    const isLast = state.currentDeepDiveIndex === state.deepDiveQuestions.length - 1;
+    if (!isLast) {
+      state.currentDeepDiveIndex++;
+      saveProgress();
+      renderDeepDiveQuestions();
+    } else {
+      const hasUnanswered = state.deepDiveQuestions.some(q => state.answers[q.originalNumber] === undefined);
+      if (hasUnanswered) {
+        validateDeepDiveAnswers();
+      } else {
+        handleDeepDiveSubmit();
+      }
+    }
   });
 
   // Email Report Submission
@@ -342,21 +480,30 @@ function setupEventListeners() {
   });
 }
 
-// Render Baseline Questions (1-18)
+// Render Active Baseline Question (1-18)
 function renderBaselineQuestions() {
   const container = document.getElementById('baseline-questions-container');
   container.innerHTML = '';
 
-  state.baselineQuestions.forEach((q, index) => {
-    const card = createQuestionCard(q, index + 1, 'baseline');
-    container.innerHTML += card;
-  });
+  const index = state.currentBaselineIndex;
+  const q = state.baselineQuestions[index];
+  if (!q) return;
+
+  const card = createQuestionCard(q, index + 1, 'baseline');
+  container.innerHTML = card;
+
+  // Trigger slide-in entry animation
+  const cardElement = container.querySelector('.question-card');
+  if (cardElement) {
+    cardElement.classList.add('fade-in-slide');
+  }
 
   // Add click listeners to custom radios to update progress bar dynamically
   attachRadioListeners('baseline');
+  updateBaselineNavButtons();
 }
 
-// Render Deep Dive Questions
+// Render Active Deep Dive Question
 function renderDeepDiveQuestions() {
   const container = document.getElementById('deep-dive-questions-container');
   container.innerHTML = '';
@@ -366,13 +513,81 @@ function renderDeepDiveQuestions() {
   document.getElementById('deep-dive-description').innerHTML = 
     `We have dynamically injected 5 additional sequential questions exclusive to <strong>${typesText}</strong> from the questionnaire file to verify your profile structure.`;
 
-  state.deepDiveQuestions.forEach((q, index) => {
-    // Number them from 19 onwards
-    const card = createQuestionCard(q, index + 19, 'deepdive');
-    container.innerHTML += card;
-  });
+  const index = state.currentDeepDiveIndex;
+  const q = state.deepDiveQuestions[index];
+  if (!q) return;
+
+  // Number them from 19 onwards
+  const card = createQuestionCard(q, index + 19, 'deepdive');
+  container.innerHTML = card;
+
+  // Trigger slide-in entry animation
+  const cardElement = container.querySelector('.question-card');
+  if (cardElement) {
+    cardElement.classList.add('fade-in-slide');
+  }
 
   attachRadioListeners('deep-dive');
+  updateDeepDiveNavButtons();
+}
+
+// Update Baseline back/next navigation button states
+function updateBaselineNavButtons() {
+  const backBtn = document.getElementById('baseline-back-btn');
+  const nextBtn = document.getElementById('baseline-next-btn');
+  const errorEl = document.getElementById('baseline-error');
+
+  if (errorEl) errorEl.style.display = 'none';
+
+  // Toggle Back button active state
+  backBtn.disabled = (state.currentBaselineIndex === 0);
+
+  // Next button is always visible so they can skip questions manually
+  nextBtn.style.display = 'inline-flex';
+
+  // Set Next button text
+  if (state.currentBaselineIndex === 19) {
+    nextBtn.innerHTML = `
+      <span>Calculate Preliminary Scores</span>
+      <i data-lucide="arrow-right"></i>
+    `;
+  } else {
+    nextBtn.innerHTML = `
+      <span>Next</span>
+      <i data-lucide="arrow-right"></i>
+    `;
+  }
+  lucide.createIcons();
+}
+
+// Update Deep Dive back/next navigation button states
+function updateDeepDiveNavButtons() {
+  const backBtn = document.getElementById('deep-dive-back-btn');
+  const nextBtn = document.getElementById('deep-dive-next-btn');
+  const errorEl = document.getElementById('deep-dive-error');
+
+  if (errorEl) errorEl.style.display = 'none';
+
+  // Toggle Back button active state
+  backBtn.disabled = (state.currentDeepDiveIndex === 0);
+
+  // Next button is always visible so they can skip questions manually
+  nextBtn.style.display = 'inline-flex';
+
+  // Set Next button text
+  const isLast = (state.currentDeepDiveIndex === state.deepDiveQuestions.length - 1);
+  if (isLast) {
+    nextBtn.innerHTML = `
+      <span>Calculate Final Results</span>
+      <i data-lucide="check-check"></i>
+    `;
+  } else {
+    nextBtn.innerHTML = `
+      <span>Next</span>
+      <i data-lucide="arrow-right"></i>
+    `;
+  }
+  lucide.createIcons();
 }
 
 // HTML generator for Question Cards
@@ -423,7 +638,7 @@ function getLikertLabel(score) {
   }
 }
 
-// Track Radio Clicks to update progress bar in real-time
+// Track Radio Clicks to update progress bar and auto-advance
 function attachRadioListeners(stage) {
   const radios = document.querySelectorAll(`input[type="radio"]`);
   radios.forEach(radio => {
@@ -431,7 +646,7 @@ function attachRadioListeners(stage) {
       const qNum = parseInt(e.target.dataset.qnum, 10);
       const val = parseInt(e.target.value, 10);
       state.answers[qNum] = val;
-      updateProgress(stage);
+      updateProgress(stage === 'baseline' ? 'baseline' : 'deep-dive');
       saveProgress();
       
       // Visual highlight for the answered card
@@ -440,6 +655,42 @@ function attachRadioListeners(stage) {
         card.style.borderColor = 'var(--secondary-color)';
         card.style.background = 'rgba(20, 184, 166, 0.02)';
       }
+
+      // Auto-advance with a slight delay so the user sees the visual selection highlight
+      setTimeout(() => {
+        if (stage === 'baseline') {
+          const nextIndex = findNextUnansweredBaselineIndex(state.currentBaselineIndex);
+          if (nextIndex !== -1) {
+            // Keep sequential flow in first pass, or jump in validation/skipped phase
+            if (nextIndex < state.currentBaselineIndex && state.currentBaselineIndex < 19) {
+              state.currentBaselineIndex++;
+            } else {
+              state.currentBaselineIndex = nextIndex;
+            }
+            saveProgress();
+            renderBaselineQuestions();
+          } else {
+            if (validateBaselineAnswers()) {
+              handleBaselineSubmit();
+            }
+          }
+        } else if (stage === 'deep-dive') {
+          const nextIndex = findNextUnansweredDeepDiveIndex(state.currentDeepDiveIndex);
+          if (nextIndex !== -1) {
+            if (nextIndex < state.currentDeepDiveIndex && state.currentDeepDiveIndex < state.deepDiveQuestions.length - 1) {
+              state.currentDeepDiveIndex++;
+            } else {
+              state.currentDeepDiveIndex = nextIndex;
+            }
+            saveProgress();
+            renderDeepDiveQuestions();
+          } else {
+            if (validateDeepDiveAnswers()) {
+              handleDeepDiveSubmit();
+            }
+          }
+        }
+      }, 350); // 350ms delay
     });
   });
 }
@@ -481,8 +732,8 @@ function updateWizardNavigation() {
 function updateProgress(stage) {
   if (stage === 'baseline') {
     const count = state.baselineQuestions.filter(q => state.answers[q.originalNumber] !== undefined).length;
-    const pct = Math.round((count / 18) * 100);
-    document.getElementById('baseline-progress-text').textContent = `${pct}% (${count} of 18)`;
+    const pct = Math.round((count / 20) * 100);
+    document.getElementById('baseline-progress-text').textContent = `${pct}% (${count} of 20)`;
     document.getElementById('baseline-progress-fill').style.width = `${pct}%`;
   } else if (stage === 'deep-dive') {
     const totalCount = state.deepDiveQuestions.length;
@@ -498,19 +749,7 @@ function handleBaselineSubmit() {
   const errorEl = document.getElementById('baseline-error');
   errorEl.style.display = 'none';
 
-  // Double check all 18 questions are answered
-  const unanswered = state.baselineQuestions.filter(q => state.answers[q.originalNumber] === undefined);
-  if (unanswered.length > 0) {
-    errorEl.textContent = `Please answer all 18 questions before proceeding. (${unanswered.length} remaining)`;
-    errorEl.style.display = 'block';
-    
-    // Scroll to the first unanswered card
-    const firstUnanswered = document.getElementById(`q-card-${unanswered[0].originalNumber}`);
-    if (firstUnanswered) {
-      firstUnanswered.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      firstUnanswered.style.borderColor = 'var(--color-rating-1)';
-    }
-    showToast('Assessment incomplete. Please fill out all answers.', 'error');
+  if (!validateBaselineAnswers()) {
     return;
   }
 
@@ -533,11 +772,30 @@ function handleBaselineSubmit() {
 
   state.topTypes = topTypes;
   
-  // Select 5 additional sequential questions from MD file for the top-scoring type(s)
+  // Select exactly 5 additional sequential deep-dive questions, split strictly among tied types
+  const numTied = topTypes.length;
   state.deepDiveQuestions = [];
+
+  const questionsPerType = {};
+  topTypes.forEach(t => {
+    questionsPerType[t] = 0;
+  });
+
+  let allocated = 0;
+  while (allocated < 5) {
+    for (let i = 0; i < numTied && allocated < 5; i++) {
+      const t = topTypes[i];
+      questionsPerType[t]++;
+      allocated++;
+    }
+  }
+
   topTypes.forEach(typeNum => {
+    const countNeeded = questionsPerType[typeNum];
+    if (countNeeded === 0) return;
+
     const allTypeQuestions = state.allQuestionsByType[typeNum].questions;
-    const selectedSeq = get5SequentialQuestions(allTypeQuestions, state.baselineQuestions);
+    const selectedSeq = getNSequentialQuestions(allTypeQuestions, state.baselineQuestions, countNeeded);
     
     selectedSeq.forEach(q => {
       state.deepDiveQuestions.push({
@@ -567,22 +825,22 @@ function handleBaselineSubmit() {
   showPanel('transition-stage');
 }
 
-// Find 5 consecutive questions from file that don't overlap with baseline
-function get5SequentialQuestions(allQuestions, baselineQuestions) {
+// Find N consecutive questions from file that don't overlap with baseline
+function getNSequentialQuestions(allQuestions, baselineQuestions, n) {
   const baselineIds = new Set(baselineQuestions.map(q => q.originalNumber));
   const N = allQuestions.length;
   
-  // Iterate and find first run of 5 sequential questions with no overlap
-  for (let i = 0; i <= N - 5; i++) {
-    const chunk = allQuestions.slice(i, i + 5);
+  // Iterate and find first run of n sequential questions with no overlap
+  for (let i = 0; i <= N - n; i++) {
+    const chunk = allQuestions.slice(i, i + n);
     const overlaps = chunk.some(q => baselineIds.has(q.originalNumber));
     if (!overlaps) {
       return chunk;
     }
   }
   
-  // Fallback: simply filter baseline and grab first 5
-  return allQuestions.filter(q => !baselineIds.has(q.originalNumber)).slice(0, 5);
+  // Fallback: simply filter baseline and grab first n
+  return allQuestions.filter(q => !baselineIds.has(q.originalNumber)).slice(0, n);
 }
 
 // Process Stage 3 Deep Dive Form
@@ -590,18 +848,7 @@ function handleDeepDiveSubmit() {
   const errorEl = document.getElementById('deep-dive-error');
   errorEl.style.display = 'none';
 
-  // Check all deep dive questions are answered
-  const unanswered = state.deepDiveQuestions.filter(q => state.answers[q.originalNumber] === undefined);
-  if (unanswered.length > 0) {
-    errorEl.textContent = `Please answer all deep-dive questions before completing. (${unanswered.length} remaining)`;
-    errorEl.style.display = 'block';
-    
-    const firstUnanswered = document.getElementById(`q-card-${unanswered[0].originalNumber}`);
-    if (firstUnanswered) {
-      firstUnanswered.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      firstUnanswered.style.borderColor = 'var(--color-rating-1)';
-    }
-    showToast('Deep-dive incomplete. Please fill out all answers.', 'error');
+  if (!validateDeepDiveAnswers()) {
     return;
   }
 
@@ -611,6 +858,76 @@ function handleDeepDiveSubmit() {
   updateWizardNavigation();
   renderResults();
   showPanel('results-stage');
+}
+
+// Missed questions redirection helper functions
+function findNextUnansweredBaselineIndex(startIndex = 0) {
+  const len = state.baselineQuestions.length;
+  for (let i = startIndex; i < len; i++) {
+    const q = state.baselineQuestions[i];
+    if (state.answers[q.originalNumber] === undefined) {
+      return i;
+    }
+  }
+  for (let i = 0; i < startIndex; i++) {
+    const q = state.baselineQuestions[i];
+    if (state.answers[q.originalNumber] === undefined) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Find next unanswered deep dive index helper
+function findNextUnansweredDeepDiveIndex(startIndex = 0) {
+  const len = state.deepDiveQuestions.length;
+  for (let i = startIndex; i < len; i++) {
+    const q = state.deepDiveQuestions[i];
+    if (state.answers[q.originalNumber] === undefined) {
+      return i;
+    }
+  }
+  for (let i = 0; i < startIndex; i++) {
+    const q = state.deepDiveQuestions[i];
+    if (state.answers[q.originalNumber] === undefined) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Validate that all baseline questions are answered, redirecting if skipped
+function validateBaselineAnswers() {
+  const unansweredIndex = state.baselineQuestions.findIndex(q => state.answers[q.originalNumber] === undefined);
+  if (unansweredIndex !== -1) {
+    state.currentBaselineIndex = unansweredIndex;
+    saveProgress();
+    renderBaselineQuestions();
+    
+    const errorEl = document.getElementById('baseline-error');
+    errorEl.textContent = 'Some questions were missed or skipped. Please answer all 20 questions to proceed.';
+    errorEl.style.display = 'block';
+    showToast('Redirecting to the first missed question.', 'error');
+    return false;
+  }
+  return true;
+}
+
+// Validate that all deep dive questions are answered, redirecting if skipped
+function validateDeepDiveAnswers() {
+  const unansweredIndex = state.deepDiveQuestions.findIndex(q => state.answers[q.originalNumber] === undefined);
+  if (unansweredIndex !== -1) {
+    state.currentDeepDiveIndex = unansweredIndex;
+    saveProgress();
+    renderDeepDiveQuestions();
+    
+    const errorEl = document.getElementById('deep-dive-error');
+    errorEl.textContent = 'Some deep-dive questions were missed or skipped. Please answer all of them to proceed.';
+    errorEl.style.display = 'block';
+    showToast('Redirecting to the first missed deep-dive question.', 'error');
+    return false;
+  }
+  return true;
 }
 
 // Calculate type scores (averages of answered questions per type)
@@ -997,7 +1314,7 @@ function downloadLocalReport() {
 
 // Show specific panel, hide all other panels
 function showPanel(panelId) {
-  const panels = ['loading-screen', 'baseline-stage', 'transition-stage', 'deep-dive-stage', 'results-stage'];
+  const panels = ['loading-screen', 'consent-stage', 'baseline-stage', 'transition-stage', 'deep-dive-stage', 'results-stage'];
   panels.forEach(p => {
     document.getElementById(p).classList.toggle('active', p === panelId);
   });
