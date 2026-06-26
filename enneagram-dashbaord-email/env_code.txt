@@ -1,0 +1,13 @@
+# Enneagram Dashboard Configuration
+
+# Server Port
+PORT=3000
+
+# SMTP Configuration (Optional - for sending real emails)
+# If left empty, the server will save reports locally in the 'reports' folder.
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER={SMtp userID}
+SMTP_PASS= {smtp pass}
+EMAIL_FROM={login email id}
