@@ -1509,3 +1509,39 @@ button {
   margin: 0;
 }
 
+/* GDPR Consent Form Styles */
+.consent-wrapper {
+  margin: 1.5rem auto;
+  text-align: left;
+  max-width: 600px;
+  padding: 1.25rem;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background-color: var(--panel-bg);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.consent-wrapper label {
+  display: flex;
+  gap: 0.75rem;
+  cursor: pointer;
+  align-items: flex-start;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.consent-wrapper input[type="checkbox"] {
+  margin-top: 0.2rem;
+  cursor: pointer;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent-color);
+}
+
+.consent-wrapper:hover {
+  border-color: rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.05);
+}
+

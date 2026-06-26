@@ -132,6 +132,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // --- Setup Interactions ---
 function setupEventListeners() {
+  // GDPR Consent Checkbox and Start Button
+  const consentCheckbox = document.getElementById('privacy-consent-checkbox');
+  const startBtn = document.getElementById('start-btn');
+  if (consentCheckbox && startBtn) {
+    consentCheckbox.addEventListener('change', (e) => {
+      startBtn.disabled = !e.target.checked;
+    });
+  }
+
   // Start Assessment
   document.getElementById('start-btn').addEventListener('click', () => {
     transitionToScreen('screen-quiz');
@@ -311,6 +320,11 @@ function transitionToScreen(screenId) {
 }
 
 // --- Assessment Engine Phase 1 (Baseline) ---
+function cleanQuestionText(text) {
+  // Strips any prefix like "Statement 1: ", "Statement 1 - ", or "Statement 1"
+  return text.replace(/^Statement\s*\d+\s*[:\-]?\s*/i, '').trim();
+}
+
 function startBaselineQuiz() {
   appState.activePhase = 1;
   appState.answers = {};
@@ -325,7 +339,7 @@ function startBaselineQuiz() {
     selected.forEach(q => {
       appState.phase1Questions.push({
         id: q.id,
-        text: q.text,
+        text: cleanQuestionText(q.text),
         typeId: type.id
       });
     });
@@ -333,6 +347,12 @@ function startBaselineQuiz() {
 
   // Shuffle all 18 baseline questions to keep the assessment blind
   appState.phase1Questions = shuffleArray(appState.phase1Questions);
+
+  // Re-index baseline questions sequentially 1-18 for blind scoring and standard display
+  appState.phase1Questions.forEach((q, idx) => {
+    q.sequentialId = idx + 1;
+  });
+
   appState.currentQuestions = appState.phase1Questions;
 
   // Generate Navigation Dots
@@ -372,8 +392,8 @@ function renderQuestion() {
   const pct = ((appState.currentIndex) / appState.currentQuestions.length) * 100;
   document.getElementById('quiz-progress-bar').style.width = `${pct}%`;
 
-  // Question Content
-  document.getElementById('question-category').textContent = `Statement ${question.id}`;
+  // Question Content (uses sequentialId for sequentially indexed display 1-18)
+  document.getElementById('question-category').textContent = `Statement ${question.sequentialId || question.id}`;
   document.getElementById('question-text').textContent = question.text;
 
   // Reset & Populate Ratings
@@ -388,6 +408,13 @@ function renderQuestion() {
   // Enable/Disable Back button
   const prevBtn = document.getElementById('prev-btn');
   prevBtn.disabled = appState.currentIndex === 0;
+
+  // Next button is enabled ONLY if the current question is answered
+  const nextBtn = document.getElementById('next-btn');
+  const isAnswered = appState.answers[question.id] !== undefined;
+  if (nextBtn) {
+    nextBtn.disabled = !isAnswered;
+  }
 
   // Setup dot highlights
   const dots = document.querySelectorAll('.nav-dot');
@@ -433,10 +460,21 @@ function goToPreviousQuestion() {
 }
 
 function goToNextQuestion() {
-  // Allow skipping or moving forward if already answered
+  const currentQuestion = appState.currentQuestions[appState.currentIndex];
+  const isAnswered = appState.answers[currentQuestion.id] !== undefined;
+  
+  if (!isAnswered) return; // Cannot proceed without answering
+
   if (appState.currentIndex < appState.currentQuestions.length - 1) {
     appState.currentIndex++;
     renderQuestion();
+  } else {
+    // Completed current set of questions
+    if (appState.activePhase === 1) {
+      processBaselineQuizCompleted();
+    } else {
+      processDeepDiveQuizCompleted();
+    }
   }
 }
 
@@ -460,7 +498,7 @@ function processBaselineQuizCompleted() {
 
   appState.dominantTypes = topTypes;
   
-  // Generate 5 random questions *exclusive* to the dominant type(s)
+  // Generate 5 sequential questions *exclusive* to the dominant type(s)
   appState.phase2Questions = [];
   
   topTypes.forEach(typeId => {
@@ -470,20 +508,25 @@ function processBaselineQuizCompleted() {
     const phase1Ids = appState.phase1Questions.map(q => q.id);
     const availableQuestions = typeObj.questions.filter(q => !phase1Ids.includes(q.id));
     
-    const shuffled = shuffleArray(availableQuestions);
-    const selected = shuffled.slice(0, 5);
+    // Sort available questions sequentially by their original file ID
+    const sortedAvailable = [...availableQuestions].sort((a, b) => a.id - b.id);
+    
+    // Select the first 5 in sequential order
+    const selected = sortedAvailable.slice(0, 5);
     
     selected.forEach(q => {
       appState.phase2Questions.push({
         id: q.id,
-        text: q.text,
+        text: cleanQuestionText(q.text),
         typeId: typeId
       });
     });
   });
 
-  // If there are ties, we present 5 questions per tied type. Shuffle the collection.
-  appState.phase2Questions = shuffleArray(appState.phase2Questions);
+  // Re-index Phase 2 questions sequentially
+  appState.phase2Questions.forEach((q, idx) => {
+    q.sequentialId = idx + 1;
+  });
 
   // Render Transition screen
   populateTransitionDetails();
@@ -1532,12 +1575,20 @@ function restartAssessment() {
     
     const accordionHeader = document.getElementById('breakdown-toggle-header');
     const accordionContent = document.getElementById('breakdown-content');
-    accordionHeader.classList.remove('active');
-    accordionContent.classList.add('collapsed');
+    if (accordionHeader) accordionHeader.classList.remove('active');
+    if (accordionContent) accordionContent.classList.add('collapsed');
 
     // Hide Wing box
-    document.getElementById('wing-details-box').style.display = 'none';
+    const wingBox = document.getElementById('wing-details-box');
+    if (wingBox) wingBox.style.display = 'none';
+
+    // Reset GDPR Consent checkbox and disable start button
+    const consentCheckbox = document.getElementById('privacy-consent-checkbox');
+    if (consentCheckbox) consentCheckbox.checked = false;
+    const startBtn = document.getElementById('start-btn');
+    if (startBtn) startBtn.disabled = true;
 
     transitionToScreen('screen-welcome');
   }
 }
+
