@@ -107,7 +107,7 @@ const WING_SUBTYPES = {
 let appState = {
   types: [],               // Parsed Enneagram types
   activePhase: 1,          // 1 = Baseline, 2 = Deep Dive, 3 = Results
-  phase1Questions: [],     // 18 questions selected initially (2 per type)
+  phase1Questions: [],     // 36 questions selected initially (4 per type)
   phase2Questions: [],     // 5 questions selected for dominant type(s)
   currentQuestions: [],    // Questions being displayed right now
   currentIndex: 0,         // Current question index in currentQuestions
@@ -322,7 +322,7 @@ function transitionToScreen(screenId) {
 // --- Assessment Engine Phase 1 (Baseline) ---
 function cleanQuestionText(text) {
   // Strips any prefix like "Statement 1: ", "Statement 1 - ", or "Statement 1"
-  return text.replace(/^Statement\s*\d+\s*[:\-]?\s*/i, '').trim();
+  return text.replace(/^(Statement\s*\d+\s*[:\-]?|Statement\s*[:\-]?)\s*/i, '').trim();
 }
 
 function startBaselineQuiz() {
@@ -332,10 +332,10 @@ function startBaselineQuiz() {
   appState.phase2Questions = [];
   appState.currentIndex = 0;
 
-  // Select exactly 2 random questions from each Enneagram Type
+  // Select exactly 4 random questions from each Enneagram Type
   appState.types.forEach(type => {
     const shuffled = shuffleArray(type.questions);
-    const selected = shuffled.slice(0, 2);
+    const selected = shuffled.slice(0, 4);
     selected.forEach(q => {
       appState.phase1Questions.push({
         id: q.id,
@@ -345,10 +345,10 @@ function startBaselineQuiz() {
     });
   });
 
-  // Shuffle all 18 baseline questions to keep the assessment blind
+  // Shuffle all 36 baseline questions to keep the assessment blind
   appState.phase1Questions = shuffleArray(appState.phase1Questions);
 
-  // Re-index baseline questions sequentially 1-18 for blind scoring and standard display
+  // Re-index baseline questions sequentially 1-36 for blind scoring and standard display
   appState.phase1Questions.forEach((q, idx) => {
     q.sequentialId = idx + 1;
   });
@@ -392,7 +392,7 @@ function renderQuestion() {
   const pct = ((appState.currentIndex) / appState.currentQuestions.length) * 100;
   document.getElementById('quiz-progress-bar').style.width = `${pct}%`;
 
-  // Question Content (uses sequentialId for sequentially indexed display 1-18)
+  // Question Content (uses sequentialId for sequentially indexed display 1-36)
   document.getElementById('question-category').textContent = `Statement ${question.sequentialId || question.id}`;
   document.getElementById('question-text').textContent = question.text;
 
@@ -428,6 +428,40 @@ function renderQuestion() {
   });
 }
 
+function advanceQuestion() {
+  // Find all unanswered questions in the current phase
+  const unanswered = [];
+  appState.currentQuestions.forEach((q, idx) => {
+    if (appState.answers[q.id] === undefined) {
+      unanswered.push(idx);
+    }
+  });
+
+  if (unanswered.length === 0) {
+    // All questions answered, proceed to complete
+    if (appState.activePhase === 1) {
+      processBaselineQuizCompleted();
+    } else {
+      processDeepDiveQuizCompleted();
+    }
+  } else {
+    // Find the next unanswered question after the current index
+    let nextIndex = -1;
+    for (let i = appState.currentIndex + 1; i < appState.currentQuestions.length; i++) {
+      if (appState.answers[appState.currentQuestions[i].id] === undefined) {
+        nextIndex = i;
+        break;
+      }
+    }
+    // If none after, wrap around to the first unanswered question
+    if (nextIndex === -1) {
+      nextIndex = unanswered[0];
+    }
+    appState.currentIndex = nextIndex;
+    renderQuestion();
+  }
+}
+
 function handleAnswerSelect(value) {
   const currentQuestion = appState.currentQuestions[appState.currentIndex];
   appState.answers[currentQuestion.id] = value;
@@ -438,17 +472,7 @@ function handleAnswerSelect(value) {
 
   // Trigger brief delay, then advance for responsiveness
   setTimeout(() => {
-    if (appState.currentIndex < appState.currentQuestions.length - 1) {
-      appState.currentIndex++;
-      renderQuestion();
-    } else {
-      // Completed current set of questions
-      if (appState.activePhase === 1) {
-        processBaselineQuizCompleted();
-      } else {
-        processDeepDiveQuizCompleted();
-      }
-    }
+    advanceQuestion();
   }, 280);
 }
 
@@ -465,21 +489,26 @@ function goToNextQuestion() {
   
   if (!isAnswered) return; // Cannot proceed without answering
 
-  if (appState.currentIndex < appState.currentQuestions.length - 1) {
-    appState.currentIndex++;
-    renderQuestion();
-  } else {
-    // Completed current set of questions
-    if (appState.activePhase === 1) {
-      processBaselineQuizCompleted();
-    } else {
-      processDeepDiveQuizCompleted();
-    }
-  }
+  advanceQuestion();
 }
 
 // --- Intermediate Phase Calculation & Dynamic Injection ---
 function processBaselineQuizCompleted() {
+  // Validation check: if any baseline questions were missed or skipped, redirect back
+  const unanswered = [];
+  appState.phase1Questions.forEach((q, idx) => {
+    if (appState.answers[q.id] === undefined) {
+      unanswered.push(idx);
+    }
+  });
+
+  if (unanswered.length > 0) {
+    alert(`Validation Check: Some baseline statements are unanswered. Please complete all 36 statements before proceeding. Redirecting you to the first unanswered statement.`);
+    appState.currentIndex = unanswered[0];
+    renderQuestion();
+    return;
+  }
+
   calculatePreliminaryScores();
   
   // Determine highest-scoring type(s)
@@ -501,7 +530,26 @@ function processBaselineQuizCompleted() {
   // Generate 5 sequential questions *exclusive* to the dominant type(s)
   appState.phase2Questions = [];
   
+  // Dynamically split 5 questions as evenly as possible across the tied types
+  const numTied = topTypes.length;
+  const questionsPerType = {};
   topTypes.forEach(typeId => {
+    questionsPerType[typeId] = 0;
+  });
+  
+  let remaining = 5;
+  let idx = 0;
+  while (remaining > 0) {
+    const typeId = topTypes[idx % numTied];
+    questionsPerType[typeId]++;
+    remaining--;
+    idx++;
+  }
+  
+  topTypes.forEach(typeId => {
+    const countToPull = questionsPerType[typeId];
+    if (countToPull === 0) return;
+
     const typeObj = appState.types.find(t => t.id === typeId);
     
     // Filter out questions of this type that were already asked in Phase 1
@@ -511,8 +559,8 @@ function processBaselineQuizCompleted() {
     // Sort available questions sequentially by their original file ID
     const sortedAvailable = [...availableQuestions].sort((a, b) => a.id - b.id);
     
-    // Select the first 5 in sequential order
-    const selected = sortedAvailable.slice(0, 5);
+    // Select the countToPull sequential questions
+    const selected = sortedAvailable.slice(0, countToPull);
     
     selected.forEach(q => {
       appState.phase2Questions.push({
@@ -523,7 +571,7 @@ function processBaselineQuizCompleted() {
     });
   });
 
-  // Re-index Phase 2 questions sequentially
+  // Re-index Phase 2 questions sequentially 1-5
   appState.phase2Questions.forEach((q, idx) => {
     q.sequentialId = idx + 1;
   });
@@ -536,7 +584,7 @@ function processBaselineQuizCompleted() {
 function calculatePreliminaryScores() {
   appState.preliminaryScores = {};
   
-  // Phase 1 has 18 questions, 2 per type
+  // Phase 1 has 36 questions, 4 per type
   for (let typeId = 1; typeId <= 9; typeId++) {
     const answeredQs = appState.phase1Questions.filter(q => q.typeId === typeId);
     const sum = answeredQs.reduce((acc, q) => acc + (appState.answers[q.id] || 0), 0);
@@ -589,7 +637,7 @@ function populateTransitionDetails() {
     const primaryType = appState.types.find(t => t.id === appState.dominantTypes[0]);
     explainerText.innerHTML = `To verify and calibrate your profile, we are dynamically injecting <strong>5 target statements exclusive to ${primaryType.name} (Type ${primaryType.id})</strong>. These statements will measure deep nuances and confirm if this is your true integration core.`;
   } else {
-    explainerText.innerHTML = `Due to a tie, we are injecting <strong>5 target statements for each</strong> of your top scoring profiles (total of ${appState.phase2Questions.length} questions). This helps differentiate the motivations and determine which core drive truly governs your psyche.`;
+    explainerText.innerHTML = `Due to a tie, we are dynamically splitting and injecting <strong>5 deep-dive statements strictly among those tied types only</strong> (${topTypesNames}). This acts as a tie-breaker to determine which core drive truly governs your psyche.`;
   }
 }
 
@@ -606,6 +654,21 @@ function startDeepDiveQuiz() {
 }
 
 function processDeepDiveQuizCompleted() {
+  // Validation check: if any deep-dive questions were missed or skipped, redirect back
+  const unanswered = [];
+  appState.phase2Questions.forEach((q, idx) => {
+    if (appState.answers[q.id] === undefined) {
+      unanswered.push(idx);
+    }
+  });
+
+  if (unanswered.length > 0) {
+    alert(`Validation Check: Some deep-dive statements are unanswered. Please complete all 5 statements. Redirecting you to the first unanswered statement.`);
+    appState.currentIndex = unanswered[0];
+    renderQuestion();
+    return;
+  }
+
   calculateFinalScores();
   appState.activePhase = 3;
   
@@ -1145,7 +1208,7 @@ function populateBreakdownSection() {
         <div class="response-item-text">
           <span class="q-num">Q${q.id}</span> ${q.text}
         </div>
-        <div class="response-item-value">${ratingText}</div>
+        <div class="response-item-value val-${ansVal}">${ratingText}</div>
       `;
       itemsContainer.appendChild(item);
     });
